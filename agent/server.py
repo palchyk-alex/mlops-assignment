@@ -8,25 +8,22 @@ agent's final SQL, the result rows, and per-iteration history.
 """
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 load_dotenv()
 
 from agent.graph import AgentState, graph  # noqa: E402
+try:  # noqa: E402
+    from langfuse.callback import CallbackHandler  # type: ignore[import-not-found]
+except ModuleNotFoundError:  # langfuse>=4
+    from langfuse.langchain import CallbackHandler  # noqa: E402
 
-# Langfuse callback handler. If keys are set we initialize it; failures
-# are NOT swallowed - a misconfigured Langfuse should not silently
-# produce zero traces.
-_lf_handler: Any = None
-if os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRET_KEY"):
-    from langfuse.langchain import CallbackHandler
 
-    _lf_handler = CallbackHandler()
+_lf_handler = CallbackHandler()
 
 
 app = FastAPI()
@@ -35,7 +32,8 @@ app = FastAPI()
 class AnswerRequest(BaseModel):
     question: str
     db: str
-    tags: dict[str, str] = {}
+    metadata: dict[str, str] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
 
 
 class AnswerResponse(BaseModel):
@@ -55,9 +53,17 @@ def health() -> dict[str, str]:
 @app.post("/answer", response_model=AnswerResponse)
 def answer(req: AnswerRequest) -> AnswerResponse:
     state = AgentState(question=req.question, db_id=req.db)
+    metadata = {"db": req.db, **req.metadata}
+    tags = list(dict.fromkeys([
+        *req.tags,
+        "agent",
+        "api",
+        f"db:{req.db}",
+    ]))
     config: dict[str, Any] = {
-        "callbacks": [_lf_handler] if _lf_handler is not None else [],
-        "metadata": req.tags,
+        "callbacks": [_lf_handler],
+        "metadata": metadata,
+        "tags": tags,
     }
     try:
         final = graph.invoke(state, config=config)
