@@ -58,7 +58,67 @@ def matches(gold_rows: list[tuple] | None, pred_rows: list[tuple] | None) -> boo
 
 def eval_one(question: dict, agent_url: str) -> dict:
     """Score one question. Return a dict capturing per-iteration correctness."""
-    raise NotImplementedError("Phase 5")
+    db_id = question["db_id"]
+    gold_sql = question["gold_sql"]
+    gold_ok, gold_rows, gold_error = run_sql(db_id, gold_sql)
+
+    result = {
+        "question": question["question"],
+        "db_id": db_id,
+        "gold_sql": gold_sql,
+        "gold_ok": gold_ok,
+        "gold_error": gold_error,
+        "agent_sql": "",
+        "agent_ok": False,
+        "agent_error": None,
+        "iterations": 0,
+        "correct": False,
+        "iteration_results": [],
+    }
+
+    try:
+        response = httpx.post(
+            agent_url,
+            json={
+                "question": question["question"],
+                "db": db_id,
+                "metadata": {"eval": "baseline"},
+                "tags": ["eval", "baseline"],
+            },
+            timeout=300.0,
+        )
+        response.raise_for_status()
+        answer = response.json()
+    except (httpx.HTTPError, ValueError) as error:
+        result["agent_error"] = f"{type(error).__name__}: {error}"
+        return result
+
+    result["agent_sql"] = answer.get("sql", "")
+    result["agent_ok"] = answer.get("ok") is True
+    result["agent_error"] = answer.get("error")
+    result["iterations"] = int(answer.get("iterations", 0))
+
+    attempts = [
+        entry.get("sql", "")
+        for entry in answer.get("history", [])
+        if entry.get("node") in {"generate_sql", "revise"}
+    ]
+    if not attempts and result["agent_sql"]:
+        attempts = [result["agent_sql"]]
+
+    for iteration, sql in enumerate(attempts):
+        pred_ok, pred_rows, pred_error = run_sql(db_id, sql)
+        result["iteration_results"].append({
+            "iteration": iteration,
+            "sql": sql,
+            "ok": pred_ok,
+            "error": pred_error,
+            "correct": gold_ok and pred_ok and matches(gold_rows, pred_rows),
+        })
+
+    if result["iteration_results"]:
+        result["correct"] = result["iteration_results"][-1]["correct"]
+    return result
 
 
 def summarize(results: list[dict]) -> dict:
@@ -70,7 +130,44 @@ def summarize(results: list[dict]) -> dict:
     The agent stopped emitting; whatever it had at termination is what
     would have been served had we polled at iteration k.
     """
-    raise NotImplementedError("Phase 5")
+    total = len(results)
+    passed = sum(result.get("correct") is True for result in results)
+    max_iteration = max(
+        (
+            max(
+                int(result.get("iterations", 0)),
+                len(result.get("iteration_results", [])) - 1,
+            )
+            for result in results
+        ),
+        default=0,
+    )
+
+    pass_rate_by_iteration: dict[str, float] = {}
+    passed_by_iteration: dict[str, int] = {}
+    for iteration in range(max_iteration + 1):
+        iteration_passed = 0
+        for result in results:
+            attempts = result.get("iteration_results", [])
+            if not attempts:
+                continue
+            carried_result = attempts[min(iteration, len(attempts) - 1)]
+            iteration_passed += carried_result.get("correct") is True
+        passed_by_iteration[str(iteration)] = iteration_passed
+        pass_rate_by_iteration[str(iteration)] = iteration_passed / total if total else 0.0
+
+    return {
+        "total": total,
+        "passed": passed,
+        "pass_rate": passed / total if total else 0.0,
+        "average_iterations": (
+            sum(int(result.get("iterations", 0)) for result in results) / total
+            if total
+            else 0.0
+        ),
+        "passed_by_iteration": passed_by_iteration,
+        "pass_rate_by_iteration": pass_rate_by_iteration,
+    }
 
 
 # ---------- Main (provided) --------------------------------------------
