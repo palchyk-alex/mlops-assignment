@@ -17,6 +17,7 @@ conditional router following the same shape.
 from __future__ import annotations
 
 import os
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -32,8 +33,8 @@ from agent.schema import render_schema
 # 3-5 is a reasonable range; tune it as part of Phase 3.
 MAX_ITERATIONS = 3
 
-VLLM_BASE_URL = os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1")
-VLLM_MODEL = os.environ.get("VLLM_MODEL", "Qwen/Qwen3-30B-A3B-Instruct-2507")
+VLLM_BASE_URL = os.environ.get("VLLM_BASE_URL", "http://192.168.1.13:8000/v1")
+VLLM_MODEL = os.environ.get("VLLM_MODEL", "Qwen/Qwen3-4B-Instruct-2507-FP8")
 # vLLM ignores the key, but a hosted OpenAI-compatible provider needs a real one.
 # Lets you point the agent at e.g. OpenAI while iterating without a running vLLM.
 LLM_API_KEY = os.environ.get("OPENAI_API_KEY", "not-needed")
@@ -124,7 +125,29 @@ def verify_node(state: AgentState) -> dict:
     What counts as "not plausible" is yours to define - see the Phase 3 targets
     in the README.
     """
-    raise NotImplementedError("Implement in Phase 3")
+    execution = state.execution
+    rendered_execution = execution.render() if execution is not None else "ERROR: no execution result"
+    response = llm().invoke([
+        ("system", prompts.VERIFY_SYSTEM),
+        ("user", prompts.VERIFY_USER.format(
+            schema=state.schema,
+            question=state.question,
+            sql=state.sql,
+            execution=rendered_execution,
+        )),
+    ])
+
+    content = response.content if isinstance(response.content, str) else str(response.content)
+    match = re.search(r"\{.*?\}", content, re.DOTALL)
+    try:
+        parsed = json.loads(match.group(0) if match else content)
+        verify_ok = parsed.get("ok") is True
+        issue = str(parsed.get("issue", ""))
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        verify_ok = False
+        issue = "Verifier returned invalid JSON."
+
+    return {"verify_ok": verify_ok, "verify_issue": issue}
 
 
 def revise_node(state: AgentState) -> dict:
@@ -137,7 +160,28 @@ def revise_node(state: AgentState) -> dict:
 
     Return: {"sql": <str>, "iteration": state.iteration + 1, ...}.
     """
-    raise NotImplementedError("Implement in Phase 3")
+    execution = state.execution
+    rendered_execution = execution.render() if execution is not None else "ERROR: no execution result"
+    response = llm().invoke([
+        ("system", prompts.REVISE_SYSTEM),
+        ("user", prompts.REVISE_USER.format(
+            schema=state.schema,
+            question=state.question,
+            sql=state.sql,
+            execution=rendered_execution,
+            issue=state.verify_issue,
+        )),
+    ])
+    sql = _extract_sql(response.content if isinstance(response.content, str) else str(response.content))
+    return {
+        "sql": sql,
+        "iteration": state.iteration + 1,
+        "history": state.history + [{
+            "node": "revise",
+            "sql": sql,
+            "issue": state.verify_issue,
+        }],
+    }
 
 
 def route_after_verify(state: AgentState) -> str:
@@ -146,7 +190,9 @@ def route_after_verify(state: AgentState) -> str:
     Two reasons to end: the verifier was happy (state.verify_ok), or you've hit
     the iteration cap (state.iteration >= MAX_ITERATIONS). Otherwise, revise.
     """
-    raise NotImplementedError("Implement in Phase 3")
+    if state.verify_ok or state.iteration >= MAX_ITERATIONS:
+        return "end"
+    return "revise"
 
 
 # ---- Graph wiring -----------------------------------------------------
