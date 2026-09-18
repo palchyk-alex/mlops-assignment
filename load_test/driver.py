@@ -24,7 +24,7 @@ import aiohttp
 ROOT = Path(__file__).resolve().parent.parent
 PERF_POOL = ROOT / "load_test" / "perf_pool.jsonl"
 DEFAULT_OUT = ROOT / "results" / "load_test.json"
-AGENT_URL_DEFAULT = "http://localhost:8001/answer"
+AGENT_URL_DEFAULT = "http://192.168.1.13:8001/answer"
 
 
 async def fire_one(
