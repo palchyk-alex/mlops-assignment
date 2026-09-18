@@ -76,7 +76,7 @@ spec:
         command: ["/bin/sh", "-c"]
         args: [
           #"vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --port 8000 --trust-remote-code --max-model-len 32768 --enable-chunked-prefill --max-num-batched-tokens 1024"
-          "vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --port 8000 --trust-remote-code --max-model-len 8192 --enable-prefix-caching --gpu-memory-utilization 0.90 --enable-chunked-prefill --max-num-batched-tokens 1024"
+          "vllm serve Qwen/Qwen3-4B-Instruct-2507-FP8 --port 8000 --trust-remote-code --max-model-len 4096 --enable-prefix-caching"
         ]
         env:
         - name: HF_TOKEN
