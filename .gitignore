@@ -28,3 +28,5 @@ screenshots/*.jpg
 
 # Lecture material (not part of the student repo)
 *.pdf
+
+k8s/secret.yaml

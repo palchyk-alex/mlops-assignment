@@ -1,0 +1,30 @@
+.git/
+.github/
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+.env
+.env.local
+
+results/
+screenshots/
+infra/
+evals/
+load_test/
+k8s/
+
+docker-compose.yml
+README.md
+REPORT.md
+
+# Keep only the top-level *.sqlite DBs from data/bird/ - the rest (raw
+# dev archive, description CSVs, sqlite -wal/-shm scratch files) isn't
+# needed to serve the agent.
+data/bird/dev_20240627/
+data/bird/dev.zip
+data/bird/__MACOSX/
+data/bird/*.sqlite-wal
+data/bird/*.sqlite-shm
