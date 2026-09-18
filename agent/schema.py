@@ -24,6 +24,14 @@ def _q(ident: str) -> str:
     return '"' + ident.replace('"', '""') + '"'
 
 
+def _pk_column(conn: sqlite3.Connection, table: str) -> str | None:
+    """Look up a table's single primary-key column name, if any."""
+    for _cid, name, _ctype, _notnull, _dflt, pk in conn.execute(f"PRAGMA table_info({_q(table)})"):
+        if pk:
+            return name
+    return None
+
+
 @lru_cache(maxsize=32)
 def render_schema(db_id: str) -> str:
     path = db_path(db_id)
@@ -52,8 +60,12 @@ def render_schema(db_id: str) -> str:
                 col_lines.append(line)
             for fk in conn.execute(f"PRAGMA foreign_key_list({_q(t)})"):
                 # (id, seq, ref_table, from, to, on_update, on_delete, match)
+                # `to` is NULL when the FK omits the referenced column (implicit PK reference).
+                to_col = fk[4] or _pk_column(conn, fk[2])
+                if to_col is None:
+                    continue
                 col_lines.append(
-                    f"  FOREIGN KEY ({_q(fk[3])}) REFERENCES {_q(fk[2])}({_q(fk[4])})"
+                    f"  FOREIGN KEY ({_q(fk[3])}) REFERENCES {_q(fk[2])}({_q(to_col)})"
                 )
             parts.append(",\n".join(col_lines))
             parts.append(");")
