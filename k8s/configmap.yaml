@@ -6,6 +6,6 @@ data:
   # host.minikube.internal resolves to the machine running minikube (docker
   # driver) - that's where vLLM (port 8000) and Langfuse (port 3001, via
   # docker-compose) are listening.
-  VLLM_BASE_URL: "http://host.minikube.internal:8000/v1"
-  VLLM_MODEL: "Qwen/Qwen3-30B-A3B-Instruct-2507"
-  LANGFUSE_HOST: "http://host.minikube.internal:3001"
+  VLLM_BASE_URL: "http://vllm-server:8000/v1"
+  VLLM_MODEL: "Qwen/Qwen3-4B-Instruct-2507-FP8"
+  LANGFUSE_HOST: "http://langfuse-web:3000"
