@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_EVAL_FILE = ROOT / "evals" / "eval_set.jsonl"
 DEFAULT_OUT_FILE = ROOT / "results" / "eval_baseline.json"
 DB_DIR = ROOT / "data" / "bird"
-AGENT_URL_DEFAULT = "http://localhost:8001/answer"
+AGENT_URL_DEFAULT = "http://192.168.1.13:8001/answer"
 
 
 # ---------- Helpers (provided) -----------------------------------------

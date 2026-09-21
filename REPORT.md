@@ -73,3 +73,119 @@ Most of the time is spent waiting for the vLLM to return an answer. Therefore we
 
 ## Iteration 2
 
+Let's change the parameters like so:
+
+**Optimization Parameters**: `--max-model-len 4096 --enable-prefix-caching --gpu-memory-utilization 0.9 --max-num-batched-tokens 4096 --max-num-seqs 64`
+
+- `--max-model-len 4096` - lowering this value can allow model to fit more KV cachaes in GPU Memory
+- `--enable-prefix-caching` - allows for prefixes to be cached and used from cache instead of computing them again
+- `--gpu-memory-utilization 0.9` - tells vLLM to pre-allocate up to 90% of GPU memory
+- `--max-num-batched-tokens 4096` - Caps tokens processed per scheduler step; higher value raises throughput but adds per-request latency
+- `--max-num-seqs 64` - Limits concurrent in-flight sequences to avoid overcommitting GPU/KV cache
+
+Result:
+```json
+{
+  "requested_rps": 1.0,
+  "duration_seconds": 300,
+  "wall_clock_seconds": 347.4572116610361,
+  "total_requests": 300,
+  "achieved_rps": 0.8634156665387239,
+  "ok": 283,
+  "timeouts": 2,
+  "http_errors": 0,
+  "client_errors": 15,
+  "latency_p50": 3.3251205009873956,
+  "latency_p95": 26.99964486301178,
+  "latency_p99": 42.623024174012244,
+  "latency_max": 100.14663059503073
+}
+```
+
+The resulting load test had similar results (even slightly worse).
+
+## Iteration 3
+
+Next thing to try:
+
+- `--max-num-seqs 256` - max concurrent sequences per batch. Raising this increases throughput (better GPU utilization) but can hurt per-request latency since more requests compete for compute
+- `--max-num-batched-tokens 16384` - caps total tokens processed per iteration. Higher = better throughput, but increases time-to-first-token for individual requests if the batch is dominated by long prefills 
+
+**Optimization Parameters**: `--max-model-len 4096 --enable-prefix-caching --gpu-memory-utilization 0.9 --max-num-batched-tokens 16384 --max-num-seqs 256`
+
+Result:
+```json
+{
+  "requested_rps": 1.0,
+  "duration_seconds": 300,
+  "wall_clock_seconds": 360.03535742801614,
+  "total_requests": 300,
+  "achieved_rps": 0.8332514954728597,
+  "ok": 287,
+  "timeouts": 0,
+  "http_errors": 0,
+  "client_errors": 13,
+  "latency_p50": 1.6353864410193637,
+  "latency_p95": 13.296275467029773,
+  "latency_p99": 18.63332071597688,
+  "latency_max": 22.996435616980307
+}
+```
+
+Increasing the `--max-num-seqs 256` did the job here, allowing fore more requests being handles in parallel.
+
+---
+
+## Final eval run
+
+
+### Baseline eval run:
+
+```json
+"summary": {
+  "total": 30,
+  "passed": 8,
+  "pass_rate": 0.26666666666666666,
+  "average_iterations": 1.5,
+  "passed_by_iteration": {
+    "0": 6,
+    "1": 8,
+    "2": 8,
+    "3": 8
+  },
+  "pass_rate_by_iteration": {
+    "0": 0.2,
+    "1": 0.26666666666666666,
+    "2": 0.26666666666666666,
+    "3": 0.26666666666666666
+  }
+}
+```
+
+### Final eval run
+
+```json
+"summary": {
+  "total": 30,
+  "passed": 10,
+  "pass_rate": 0.3333333333333333,
+  "average_iterations": 1.5666666666666667,
+  "passed_by_iteration": {
+    "0": 7,
+    "1": 9,
+    "2": 10,
+    "3": 10
+  },
+  "pass_rate_by_iteration": {
+    "0": 0.23333333333333334,
+    "1": 0.3,
+    "2": 0.3333333333333333,
+    "3": 0.3333333333333333
+  }
+}
+```
+
+### Summary
+
+The resulting vLLM config not only increase the throughput of the model but also increase the overall model accuracy. 
+Which is a big win!
